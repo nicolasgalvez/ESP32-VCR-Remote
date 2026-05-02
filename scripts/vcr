@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Send one command to the ESP32 VCR remote over serial and print the reply.
+# Usage: scripts/vcr <command>     e.g. power, play, stop, rew, ff, eject, pause, ?
+set -euo pipefail
+
+cmd="${1:-}"
+if [[ -z "$cmd" ]]; then
+  echo "usage: $0 <command>   (power, play, stop, rew, ff, eject, pause, help)" >&2
+  exit 2
+fi
+
+port=""
+for p in /dev/ttyUSB0 /dev/ttyUSB1 /dev/cu.usbserial-* /dev/cu.SLAB_USBtoUART; do
+  [[ -e "$p" ]] && { port="$p"; break; }
+done
+if [[ -z "$port" ]]; then
+  echo "no serial device found (looked for /dev/ttyUSB* and /dev/cu.usbserial-*)" >&2
+  exit 1
+fi
+
+# -hupcl prevents DTR from dropping on close, which would reset the ESP32 between invocations.
+stty -F "$port" 115200 cs8 -cstopb -parenb -ixon -ixoff -crtscts raw -echo -hupcl
+
+exec 3<>"$port"
+printf '%s\n' "$cmd" >&3
+timeout 0.5 cat <&3 || true
+exec 3<&-
+exec 3>&-
