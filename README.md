@@ -24,8 +24,8 @@ former was empirically found to work on this specific VCR.
 
 ```
 pio run                 # compile
-pio run -t upload       # compile + flash
-pio device monitor      # open serial (115200 baud)
+pio run -t upload -b <BOARD>       # compile + flash
+pio device monitor  -b 115200    # open serial (115200 baud)
 ```
 
 The `upload_port` and `monitor_port` are pinned to `/dev/cu.usbserial-0001`
@@ -34,17 +34,13 @@ override on the command line:
 
 ```
 pio run -t upload --upload-port /dev/cu.usbserial-XXXX
-pio device monitor -p /dev/cu.usbserial-XXXX
+pio device monitor -p /dev/cu.usbserial-XXXX -b 115200
 ```
 
 ## Sending commands via CLI
 
-Open the monitor, type a command, press **Enter**. Commands are
-case-insensitive.
-
-```
-pio device monitor
-```
+Open a serial connection at **115200 8N1**, type a command, press **Enter**.
+Commands are case-insensitive.
 
 On connect you'll see:
 
@@ -69,29 +65,64 @@ pause        # pause playback
 Each accepted command prints `send <NAME>` and transmits the IR frame once.
 Unknown input prints `unknown: <input>` followed by the help list.
 
-### Exiting the monitor
+### Interactive: any of these work
 
-`Ctrl+C` exits `pio device monitor`.
-
-### Piping commands (non-interactive)
-
-`pio device monitor` is interactive-only. To script commands, use any serial
-CLI that speaks a TTY at 115200 8N1, for example:
+The device path differs between platforms — on macOS it's
+`/dev/cu.usbserial-0001`, on Linux usually `/dev/ttyUSB0`. Substitute as
+needed.
 
 ```
-# send POWER once and exit
+# PlatformIO (uses upload_port from platformio.ini)
+pio device monitor
+
+# picocom — exit with Ctrl+A then Ctrl+X
+picocom -b 115200 /dev/cu.usbserial-0001
+
+# GNU screen — exit with Ctrl+A then k, then y
+screen /dev/cu.usbserial-0001 115200
+
+# minicom — exit with Ctrl+A then x
+minicom -b 115200 -D /dev/cu.usbserial-0001
+
+# cu (BSD/macOS) — exit by typing ~. on its own line
+cu -l /dev/cu.usbserial-0001 -s 115200
+```
+
+### Non-interactive: scripting one-shot commands
+
+Configure the port once with `stty`, then `printf` to the device node. The
+firmware reads until `\n`, so newline-terminate every command.
+
+macOS:
+
+```
+stty -f /dev/cu.usbserial-0001 115200 cs8 -cstopb -parenb -ixon raw
+printf 'power\n' > /dev/cu.usbserial-0001
+sleep 1
+printf 'play\n'  > /dev/cu.usbserial-0001
+```
+
+Linux:
+
+```
+stty -F /dev/ttyUSB0 115200 cs8 -cstopb -parenb -ixon raw
+printf 'power\n' > /dev/ttyUSB0
+```
+
+To capture the firmware's response while sending, hold the port open for
+reading in one shell and write from another:
+
+```
+# shell A: read
+cat /dev/cu.usbserial-0001
+
+# shell B: write
 printf 'power\n' > /dev/cu.usbserial-0001
 ```
 
-Or with `picocom` / `screen`:
-
-```
-picocom -b 115200 /dev/cu.usbserial-0001
-screen /dev/cu.usbserial-0001 115200
-```
-
-Note: PlatformIO's monitor holds the port exclusively while open. Close it
-before scripting against the raw device node.
+Note: serial ports are exclusive on macOS/Linux. Close `pio device monitor`,
+`screen`, `picocom`, etc. before scripting against the raw device node, or
+the writes will silently go nowhere.
 
 ## Adding a new command
 
